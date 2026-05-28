@@ -1,11 +1,13 @@
-/build
-/sdkconfig
-/sdkconfig.old
-/.vscode/*.log
-/defport-*
-/esp-idf-tools
-/managed_components
-/docs
+# ESP-IDF native firmware build artifacts (native-firmware/)
+native-firmware/build
+native-firmware/sdkconfig
+native-firmware/sdkconfig.old
+native-firmware/defport-*
+native-firmware/esp-idf-tools
+native-firmware/managed_components
+native-firmware/.vscode/*.log
+
+docs
 .DS_Store
 
 # Python bytecode (ESPHome external components)
