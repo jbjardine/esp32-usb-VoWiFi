@@ -1,12 +1,12 @@
-# Target YAML once the usb_hid_wakeup component is implemented.
-# This file is a SPEC, not working code (the component doesn't exist yet).
-#
-# Once implemented, compile with:
+# Full reference config for the usb_hid_wakeup component, including the
+# optional onboard RGB status LED (feu tricolore). Compile/flash with:
 #   esphome run esphome/example/wakeup-keypress.yaml
 
 esphome:
   name: esp-wakeup
   friendly_name: ESP Wakeup Keypress
+  on_boot:
+    - script.execute: led_show_state   # seed the status LED at startup
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -21,6 +21,10 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: "ESP-Wakeup Setup"  # captive portal fallback, built-in to ESPHome
+  on_connect:
+    - script.execute: led_show_state    # back to PC-state color
+  on_disconnect:
+    - script.execute: led_show_state    # script switches to blinking blue
 
 captive_portal:
 
@@ -62,6 +66,10 @@ button:
     name: "Wakeup PC"
     usb_hid_wakeup_id: kbd
     icon: mdi:power
+    on_press:                         # white flash → restore state color
+      - light.turn_on: { id: status_led, red: 100%, green: 100%, blue: 100%, brightness: 60%, effect: "None" }
+      - delay: 400ms
+      - script.execute: led_show_state
 
   # SAFE diagnostic: open Notepad on the host, focus it, enable+press this — it
   # types "shutdown /s /f /t 0" with NO execution, to validate keyboard_layout.
@@ -85,6 +93,10 @@ button:
     name: "Force shutdown (unlocked)"
     usb_hid_wakeup_id: kbd
     icon: mdi:power-plug-off
+    on_press:                         # purple flash → restore state color
+      - light.turn_on: { id: status_led, red: 60%, green: 0%, blue: 100%, brightness: 60%, effect: "None" }
+      - delay: 600ms
+      - script.execute: led_show_state
   # acpi_shutdown: ACPI System Power Down only, no typing — works even LOCKED.
   #   Graceful (apps may delay it). Requires Windows power-button action = Shut down.
   - platform: usb_hid_wakeup
@@ -92,6 +104,10 @@ button:
     name: "Shutdown ACPI (locked)"
     usb_hid_wakeup_id: kbd
     icon: mdi:power
+    on_press:
+      - light.turn_on: { id: status_led, red: 60%, green: 0%, blue: 100%, brightness: 60%, effect: "None" }
+      - delay: 600ms
+      - script.execute: led_show_state
   # auto_shutdown: force macro then ACPI fallback — covers both lock states in
   #   one press (the previous combined behavior). Optional.
   - platform: usb_hid_wakeup
@@ -100,6 +116,10 @@ button:
     usb_hid_wakeup_id: kbd
     icon: mdi:power-settings
     disabled_by_default: true
+    on_press:
+      - light.turn_on: { id: status_led, red: 60%, green: 0%, blue: 100%, brightness: 60%, effect: "None" }
+      - delay: 600ms
+      - script.execute: led_show_state
 
 # Single diagnostic status entity — "Allumé" / "Veille" / "Éteint".
 # Allumé = PC on, Veille = S3 sleep (bus suspended), Éteint = S5 off
@@ -107,9 +127,61 @@ button:
 text_sensor:
   - platform: usb_hid_wakeup
     name: "PC status"
+    id: pc_status                     # referenced by the status-LED script
     usb_hid_wakeup_id: kbd
     entity_category: diagnostic
     icon: mdi:monitor
+    on_value:
+      - script.execute: led_show_state
+
+# ── Onboard RGB status LED (feu tricolore) ──────────────────────────────────
+# Optional. Drives the S3's onboard WS2812 to show PC state at a glance:
+#   Allumé → green   Veille → amber   Éteint → red (all dim)
+#   wakeup → white flash   shutdown → purple flash   WiFi lost → blinking blue
+# 100% YAML — the component just publishes state; this is presentation.
+# Do NOT also declare `status_led:` on the same pin.
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_led
+    internal: true                  # status indicator, not a HA-controllable light
+    pin: GPIO48                      # DevKitC-1 onboard WS2812 (some boards: GPIO38)
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    default_transition_length: 120ms
+    restore_mode: ALWAYS_OFF
+    effects:
+      - pulse:
+          name: wifi_lost
+          transition_length: 300ms
+          update_interval: 600ms
+          min_brightness: 0%
+          max_brightness: 30%
+
+script:
+  - id: led_show_state
+    then:
+      - if:
+          condition:
+            not:
+              wifi.connected:
+          then:
+            - light.turn_on:
+                id: status_led
+                red: 0%
+                green: 0%
+                blue: 100%
+                effect: wifi_lost
+          else:
+            - lambda: |-
+                auto call = id(status_led).turn_on();
+                call.set_effect("None");
+                call.set_brightness(0.15f);
+                const std::string &s = id(pc_status).state;
+                if (s == "Allumé")      call.set_rgb(0.0f, 1.0f, 0.0f);   // green
+                else if (s == "Veille") call.set_rgb(1.0f, 0.5f, 0.0f);   // amber
+                else                    call.set_rgb(1.0f, 0.0f, 0.0f);   // Éteint = red
+                call.perform();
 
 # Optional raw binary signals — uncomment if you prefer separate on/off entities
 # instead of (or in addition to) the text status above.

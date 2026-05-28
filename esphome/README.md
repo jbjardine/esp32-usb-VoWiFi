@@ -180,6 +180,60 @@ available (all passive):
 | `mounted` | USB enumerated to a host | `connectivity` | Connecté / Déconnecté |
 | `suspended` | USB bus suspended | — | Activé / Désactivé |
 
+## Onboard RGB status LED (optional)
+
+The S3's onboard WS2812 can show device state at a glance. This is **100% YAML**
+— the component just publishes state, the LED is presentation. Declare the LED
+as a `light:` and drive it from automations keyed on `PC status` + the buttons +
+WiFi state. Full block in [`example/wakeup-keypress.yaml`](example/wakeup-keypress.yaml).
+
+| State | LED |
+|---|---|
+| PC `Allumé` | 🟢 green (dim) |
+| PC `Veille` | 🟠 amber (dim) |
+| PC `Éteint` | 🔴 red (dim) |
+| Wakeup pressed | ⚪ white flash → back to state color |
+| Shutdown pressed | 🟣 purple flash → back to state color |
+| WiFi lost / AP mode | 🔵 blinking blue (overrides — device unreachable) |
+
+```yaml
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_led
+    internal: true
+    pin: GPIO48          # DevKitC-1 onboard WS2812 (some boards: GPIO38)
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    effects:
+      - pulse: { name: wifi_lost, update_interval: 600ms, min_brightness: 0%, max_brightness: 30% }
+
+script:
+  - id: led_show_state
+    then:
+      - if:
+          condition: { not: { wifi.connected: } }
+          then:
+            - light.turn_on: { id: status_led, blue: 100%, red: 0%, green: 0%, effect: wifi_lost }
+          else:
+            - lambda: |-
+                auto call = id(status_led).turn_on();
+                call.set_effect("None"); call.set_brightness(0.15f);
+                const std::string &s = id(pc_status).state;
+                if (s == "Allumé")      call.set_rgb(0,1,0);
+                else if (s == "Veille") call.set_rgb(1,0.5f,0);
+                else                    call.set_rgb(1,0,0);
+                call.perform();
+```
+
+Then give the `text_sensor` `id: pc_status` + `on_value: [script.execute: led_show_state]`,
+add `on_connect`/`on_disconnect` on `wifi:` and `on_boot` on `esphome:` (all
+`script.execute: led_show_state`), and a white/purple `light.turn_on` + `delay`
++ `script.execute: led_show_state` on each button's `on_press`.
+
+> Don't also declare ESPHome's `status_led:` on GPIO48 — we own the LED here.
+> Adjust `pin:` if your board's WS2812 is on a different GPIO (e.g. 38).
+
 ## Hardware requirement
 
 **ESP32-S3 only.** USB OTG native peripheral is required to act as a USB
