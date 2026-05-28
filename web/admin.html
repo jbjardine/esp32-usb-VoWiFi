@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP Wakeup — Admin</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:1.5rem;background:#101418;color:#e6e6e6;min-height:100vh}
+h1{font-size:1.4rem;margin:0 0 0.3rem}
+h2{font-size:1rem;margin:1.8rem 0 0.6rem;color:#9aa3ad;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
+.lead{color:#8a939c;font-size:0.85rem;margin:0 0 1rem}
+.card{background:#181d24;border:1px solid #242b33;border-radius:8px;padding:1rem 1.1rem;margin-bottom:0.8rem}
+.row{display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.9rem;border-bottom:1px solid #1f262e}
+.row:last-child{border-bottom:none}
+.row .k{color:#8a939c}
+.row .v{font-family:ui-monospace,monospace;color:#e6e6e6}
+.badge{display:inline-block;padding:0.15rem 0.5rem;border-radius:10px;font-size:0.75rem;font-weight:600}
+.badge.ok{background:#1f4f2e;color:#7ee19a}
+.badge.ko{background:#4f1f1f;color:#e17e7e}
+label{display:block;margin-top:0.7rem;font-size:0.8rem;color:#b0b8c0}
+input{width:100%;padding:0.55rem 0.7rem;margin-top:0.25rem;border:1px solid #2a3038;background:#101418;color:#e6e6e6;border-radius:5px;font-size:0.95rem}
+input:focus{outline:none;border-color:#4a9fe6}
+button{padding:0.6rem 1rem;background:#4a9fe6;color:#fff;border:none;border-radius:5px;font-weight:600;font-size:0.9rem;cursor:pointer;margin-top:0.8rem}
+button:hover{background:#5fb0ff}
+button.danger{background:#c8403c}button.danger:hover{background:#d54f4b}
+button.big{width:100%;padding:1rem;font-size:1.05rem}
+button:disabled{background:#2a3038;color:#666;cursor:not-allowed}
+.toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#242b33;padding:0.7rem 1.1rem;border-radius:6px;font-size:0.85rem;border-left:3px solid #4a9fe6;opacity:0;transition:opacity 0.2s}
+.toast.show{opacity:1}
+.toast.err{border-color:#e64a4a}
+.toast.ok{border-color:#4ae67c}
+footer{margin-top:2rem;color:#5a626a;font-size:0.75rem;text-align:center}
+</style>
+</head>
+<body>
+<h1>ESP Wakeup</h1>
+<p class="lead">Admin interface</p>
+
+<h2>État</h2>
+<div class="card" id="status-card">
+<div class="row"><span class="k">Hostname</span><span class="v" id="s-host">—</span></div>
+<div class="row"><span class="k">USB</span><span class="v" id="s-usb">—</span></div>
+<div class="row"><span class="k">WiFi SSID</span><span class="v" id="s-ssid">—</span></div>
+<div class="row"><span class="k">IP</span><span class="v" id="s-ip">—</span></div>
+<div class="row"><span class="k">RSSI</span><span class="v" id="s-rssi">—</span></div>
+<div class="row"><span class="k">Uptime</span><span class="v" id="s-up">—</span></div>
+<div class="row"><span class="k">Heap libre</span><span class="v" id="s-heap">—</span></div>
+</div>
+
+<h2>Réveiller le PC</h2>
+<div class="card">
+<button class="big" id="btn-wakeup">Wakeup PC</button>
+</div>
+
+<h2>Hostname</h2>
+<form class="card" id="form-host">
+<label for="hostname">Nom mDNS (`<host>.local`)</label>
+<input id="hostname" name="hostname" type="text" maxlength="32" autocomplete="off" pattern="[a-zA-Z0-9-]+" placeholder="esp-wakeup-keypress">
+<button type="submit">Sauvegarder &amp; rebooter</button>
+</form>
+
+<h2>WiFi</h2>
+<form class="card" id="form-wifi">
+<label for="wifi-ssid">SSID</label>
+<input id="wifi-ssid" name="ssid" type="text" maxlength="32" autocomplete="off">
+<label for="wifi-pwd">Mot de passe</label>
+<input id="wifi-pwd" name="password" type="password" maxlength="64" autocomplete="new-password">
+<button type="submit">Sauvegarder &amp; rebooter</button>
+</form>
+
+<h2>Mots de passe</h2>
+<form class="card" id="form-pwd">
+<label for="wk-pwd">Wakeup (utilisé par /wakeup?pass=…)</label>
+<input id="wk-pwd" name="wakeup" type="password" maxlength="64" autocomplete="new-password">
+<label for="ad-pwd">Admin (cette page)</label>
+<input id="ad-pwd" name="admin" type="password" maxlength="64" autocomplete="new-password">
+<button type="submit">Sauvegarder</button>
+</form>
+
+<h2>MQTT / Home Assistant</h2>
+<form class="card" id="form-mqtt">
+<label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+<input id="mq-en" name="enabled" type="checkbox" value="1" style="width:auto;margin-top:0">
+<span>Activer MQTT</span>
+</label>
+<label for="mq-broker">Broker URL</label>
+<input id="mq-broker" name="broker" type="text" placeholder="mqtt://192.168.1.10:1883" maxlength="127" autocomplete="off">
+<label for="mq-user">User</label>
+<input id="mq-user" name="user" type="text" maxlength="32" autocomplete="off">
+<label for="mq-pwd">Password <span id="mq-pwd-hint" style="color:#5a626a"></span></label>
+<input id="mq-pwd" name="password" type="password" maxlength="64" autocomplete="new-password">
+<label for="mq-prefix">Discovery prefix</label>
+<input id="mq-prefix" name="discovery_prefix" type="text" value="homeassistant" maxlength="32" autocomplete="off">
+<button type="submit">Sauvegarder &amp; rebooter</button>
+</form>
+
+<h2>OTA — Update firmware</h2>
+<div class="card">
+<input type="file" id="fw-file" accept=".bin">
+<div id="ota-progress-wrap" style="display:none;margin-top:0.6rem;background:#101418;border-radius:4px;overflow:hidden;height:8px">
+<div id="ota-progress" style="height:100%;width:0;background:#4a9fe6;transition:width 0.1s"></div>
+</div>
+<div id="ota-msg" style="margin-top:0.4rem;font-size:0.85rem;color:#8a939c"></div>
+<button id="btn-ota">Flasher le firmware</button>
+</div>
+
+<h2>Système</h2>
+<div class="card">
+<button class="danger" id="btn-reboot">Reboot</button>
+</div>
+
+<div class="toast" id="toast"></div>
+<footer>esp-wakeup-keypress</footer>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const toast=(msg,kind)=>{const t=$('toast');t.textContent=msg;t.className='toast show '+(kind||'');setTimeout(()=>t.classList.remove('show'),3000);};
+const fmtSecs=(s)=>{const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60),sec=s%60;return (d?d+'j ':'')+(h?h+'h ':'')+(m?m+'m ':'')+sec+'s';};
+function setBadge(el,ok,text){el.textContent='';const b=document.createElement('span');b.className='badge '+(ok?'ok':'ko');b.textContent=text;el.appendChild(b);}
+async function loadStatus(){
+  try{
+    const r=await fetch('/api/status');
+    if(!r.ok){if(r.status===401)location.reload();return;}
+    const j=await r.json();
+    $('s-host').textContent=j.hostname||'—';
+    setBadge($('s-usb'),j.usb_mounted,j.usb_mounted?'Connecté':'Déconnecté');
+    $('s-ssid').textContent=j.wifi_ssid||'—';
+    if(!$('hostname').value)$('hostname').value=j.hostname||'';
+    $('s-ip').textContent=j.ip||'—';
+    $('s-rssi').textContent=(j.rssi||'—')+' dBm';
+    $('s-up').textContent=fmtSecs(j.uptime_s||0);
+    $('s-heap').textContent=Math.round((j.free_heap||0)/1024)+' KB';
+    if(!$('wifi-ssid').value)$('wifi-ssid').value=j.wifi_ssid||'';
+  }catch(e){console.error(e);}
+}
+$('btn-wakeup').addEventListener('click',async()=>{$('btn-wakeup').disabled=true;try{const r=await fetch('/api/wakeup',{method:'POST'});if(r.ok)toast('Wakeup envoyé !','ok');else toast('Erreur '+r.status,'err');}catch(e){toast('Erreur réseau','err');}setTimeout(()=>$('btn-wakeup').disabled=false,1000);});
+$('form-host').addEventListener('submit',async(e)=>{e.preventDefault();const d=new URLSearchParams(new FormData(e.target));try{const r=await fetch('/admin/hostname',{method:'POST',body:d});if(r.ok)toast('Hostname sauvé, reboot…','ok');else toast('Erreur '+r.status,'err');}catch(e){toast('Erreur réseau','err');}});
+$('form-wifi').addEventListener('submit',async(e)=>{e.preventDefault();const d=new URLSearchParams(new FormData(e.target));try{const r=await fetch('/admin/wifi',{method:'POST',body:d});if(r.ok)toast('OK ! Reboot dans 2s.','ok');else toast('Erreur '+r.status,'err');}catch(e){toast('Erreur réseau','err');}});
+$('form-pwd').addEventListener('submit',async(e)=>{e.preventDefault();const d=new URLSearchParams(new FormData(e.target));try{const r=await fetch('/admin/passwords',{method:'POST',body:d});if(r.ok){toast('Mots de passe mis à jour. Reconnecte-toi.','ok');setTimeout(()=>location.reload(),1500);}else toast('Erreur '+r.status,'err');}catch(e){toast('Erreur réseau','err');}});
+$('btn-reboot').addEventListener('click',async()=>{if(!confirm('Rebooter l\'ESP ?'))return;try{await fetch('/admin/reboot',{method:'POST'});toast('Reboot en cours…','ok');}catch(e){}});
+$('form-mqtt').addEventListener('submit',async(e)=>{e.preventDefault();const fd=new FormData(e.target);if(!fd.has('enabled'))fd.set('enabled','0');const d=new URLSearchParams(fd);try{const r=await fetch('/admin/mqtt',{method:'POST',body:d});if(r.ok)toast('MQTT sauvé, reboot…','ok');else toast('Erreur '+r.status,'err');}catch(e){toast('Erreur réseau','err');}});
+async function loadMqtt(){try{const r=await fetch('/api/mqtt');if(!r.ok)return;const j=await r.json();$('mq-en').checked=!!j.enabled;$('mq-broker').value=j.broker||'';$('mq-user').value=j.user||'';$('mq-prefix').value=j.discovery_prefix||'homeassistant';$('mq-pwd-hint').textContent=j.has_password?'(configuré, laisser vide pour ne pas changer)':'';}catch(e){}}
+$('btn-ota').addEventListener('click',()=>{
+  const f=$('fw-file').files[0];
+  if(!f){toast('Choisis un fichier .bin','err');return;}
+  $('btn-ota').disabled=true;
+  $('ota-progress-wrap').style.display='block';
+  $('ota-progress').style.width='0';
+  $('ota-msg').textContent='Upload '+Math.round(f.size/1024)+' KB…';
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST','/admin/ota',true);
+  xhr.upload.addEventListener('progress',(e)=>{
+    if(e.lengthComputable){
+      const pct=Math.round((e.loaded/e.total)*100);
+      $('ota-progress').style.width=pct+'%';
+      $('ota-msg').textContent=pct+'% ('+Math.round(e.loaded/1024)+'/'+Math.round(e.total/1024)+' KB)';
+    }
+  });
+  xhr.addEventListener('load',()=>{
+    if(xhr.status>=200&&xhr.status<300){
+      $('ota-msg').textContent='OK ! L\'ESP reboot avec le nouveau firmware dans 2s.';
+      toast('Firmware uploadé, reboot…','ok');
+    }else{
+      $('ota-msg').textContent='Erreur '+xhr.status+': '+xhr.responseText;
+      $('btn-ota').disabled=false;
+    }
+  });
+  xhr.addEventListener('error',()=>{$('ota-msg').textContent='Erreur réseau';$('btn-ota').disabled=false;});
+  xhr.send(f);
+});
+loadStatus();
+loadMqtt();
+setInterval(loadStatus,5000);
+</script>
+</body>
+</html>

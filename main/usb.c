@@ -1,10 +1,11 @@
 #include "main.h"
 #include "led.h"
+#include "mqtt.h"
 
 #include <tinyusb.h>
 #include <class/hid/hid_device.h>
 #include <esp_log.h>
-#include <event_groups.h>
+#include <freertos/event_groups.h>
 
 static const char *TAG = "usb";
 
@@ -68,6 +69,10 @@ void usb_request_keypress_send(bool from_isr) {
 		xEventGroupSetBits(usb_event_group, USB_EVENT_KEYPRESS);
 }
 
+bool usb_is_mounted(void) {
+	return tud_mounted();
+}
+
 static void usb_task(void *pvParameters) {
 	ESP_LOGI(TAG, "usb task started");
 
@@ -83,11 +88,9 @@ static void usb_task(void *pvParameters) {
 				led_handle_keypress_on();
 
 				tud_remote_wakeup();
+				mqtt_notify_wakeup();  /* publishes wakeup_count to HA (no-op if MQTT off) */
 
-				// uint8_t keycode[6] = { HID_KEY_A };
-				// tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, keycode);
 				vTaskDelay(pdMS_TO_TICKS(50));
-				// tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, NULL);
 
 				led_handle_keypress_off();
 #if !CONFIG_ESP_WAKEUP_KEYPRESS_LED_NOTIFY_MODE
@@ -102,11 +105,12 @@ void usb_init(void) {
 	ESP_LOGI(TAG, "usb init");
 	usb_event_group = xEventGroupCreate();
 	const tinyusb_config_t tusb_cfg = {
-		.device_descriptor = NULL,
-		.string_descriptor = hid_string_descriptor,
-		.string_descriptor_count = sizeof(hid_string_descriptor) / sizeof(hid_string_descriptor[0]),
-		.external_phy = false,
-		.configuration_descriptor = hid_configuration_descriptor,
+		.descriptor = {
+			.device = NULL,
+			.string = hid_string_descriptor,
+			.string_count = sizeof(hid_string_descriptor) / sizeof(hid_string_descriptor[0]),
+			.full_speed_config = hid_configuration_descriptor,
+		},
 	};
 
 	ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));

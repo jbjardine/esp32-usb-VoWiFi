@@ -5,3 +5,5 @@
 /defport-*
 /esp-idf-tools
 /managed_components
+/docs
+.DS_Store

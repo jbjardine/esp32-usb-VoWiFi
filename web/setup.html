@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP Wakeup — Setup</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;max-width:420px;margin:0 auto;padding:1.5rem;background:#101418;color:#e6e6e6;min-height:100vh}
+h1{font-size:1.4rem;margin:0 0 0.3rem}
+p.lead{color:#8a939c;font-size:0.9rem;margin-top:0;margin-bottom:1.5rem}
+label{display:block;margin-top:1rem;font-size:0.85rem;color:#b0b8c0;letter-spacing:0.02em}
+input{width:100%;padding:0.7rem 0.8rem;margin-top:0.3rem;border:1px solid #2a3038;background:#181d24;color:#e6e6e6;border-radius:6px;font-size:1rem}
+input:focus{outline:none;border-color:#4a9fe6}
+button{width:100%;margin-top:1.8rem;padding:0.85rem;background:#4a9fe6;color:#fff;border:none;border-radius:6px;font-weight:600;font-size:1rem;cursor:pointer}
+button:hover{background:#5fb0ff}
+button:disabled{background:#2a3038;color:#666;cursor:not-allowed}
+.status{margin-top:1rem;padding:0.8rem 1rem;background:#1a1f27;border-left:3px solid #4a9fe6;border-radius:4px;font-size:0.9rem}
+.status.err{border-color:#e64a4a}
+.status.ok{border-color:#4ae67c}
+footer{margin-top:2rem;color:#5a626a;font-size:0.75rem;text-align:center}
+</style>
+</head>
+<body>
+<h1>ESP Wakeup</h1>
+<p class="lead">Configure le WiFi auquel cet ESP doit se connecter.</p>
+<form id="setup">
+<label for="ssid">SSID WiFi</label>
+<input type="text" id="ssid" name="ssid" required maxlength="32" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+<label for="password">Mot de passe</label>
+<input type="password" id="password" name="password" maxlength="64" autocomplete="new-password">
+<button type="submit" id="submit">Sauvegarder &amp; redémarrer</button>
+</form>
+<div class="status" id="status" hidden></div>
+<footer>esp-wakeup-keypress</footer>
+<script>
+const form=document.getElementById('setup');
+const status=document.getElementById('status');
+const btn=document.getElementById('submit');
+form.addEventListener('submit',async(e)=>{
+e.preventDefault();
+btn.disabled=true;
+status.className='status';
+status.hidden=false;
+status.textContent='Envoi…';
+try{
+const data=new URLSearchParams(new FormData(form));
+const r=await fetch('/api/setup',{method:'POST',body:data,headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+if(r.ok){status.className='status ok';status.textContent='OK ! L\'ESP redémarre. Reconnecte-toi à ton WiFi normal puis va sur http://esp-wakeup-keypress.local/';}
+else{status.className='status err';status.textContent='Erreur '+r.status;btn.disabled=false;}
+}catch(err){status.className='status err';status.textContent='Erreur : '+err.message;btn.disabled=false;}
+});
+</script>
+</body>
+</html>
