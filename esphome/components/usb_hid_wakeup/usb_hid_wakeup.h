@@ -74,6 +74,9 @@ class UsbHidWakeupComponent : public Component {
   };
 
   bool char_to_keycode_(char c, uint8_t &keycode, bool &shift) const;
+  // Shared guard for the sequence-emitting buttons: warns+returns false if USB
+  // isn't ready, otherwise begins a fresh sequence and returns true.
+  bool ready_for_sequence_(const char *what);
   void begin_sequence_();  // clears any in-flight sequence, resets the time base
   void enqueue_key_(uint32_t offset_ms, uint8_t modifier, uint8_t keycode);
   void enqueue_sysctrl_(uint32_t offset_ms, uint8_t payload);

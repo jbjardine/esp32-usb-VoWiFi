@@ -61,6 +61,9 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
   return hid_report_descriptor;
 }
 
+// tud_hid_get_report_cb / tud_hid_set_report_cb are MANDATORY in TinyUSB (not
+// weak) — the HID class links against them. Keep these stubs even though we are
+// output-only; deleting them breaks the build.
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type,
                                uint8_t *buffer, uint16_t reqlen) {
   (void) instance;
@@ -341,16 +344,22 @@ void UsbHidWakeupComponent::request_wakeup() {
   ESP_LOGI(TAG, "remote wakeup %s", sent ? "signal sent" : "not sent (host not suspended)");
 }
 
-void UsbHidWakeupComponent::request_type_test() {
+bool UsbHidWakeupComponent::ready_for_sequence_(const char *what) {
   if (!this->tinyusb_started_ || !tud_mounted()) {
-    ESP_LOGW(TAG, "type test requested but USB not mounted — ignoring");
-    return;
+    ESP_LOGW(TAG, "%s requested but USB not mounted to a host — ignoring", what);
+    return false;
   }
+  this->begin_sequence_();
+  return true;
+}
+
+void UsbHidWakeupComponent::request_type_test() {
   // SAFE: types the command string into whatever window is focused (open
   // Notepad first), with NO Win+R, NO Enter, NO power down. Use it to verify
   // the keyboard_layout produces the exact text before trusting force_shutdown.
+  if (!this->ready_for_sequence_("type test"))
+    return;
   ESP_LOGI(TAG, "type test: typing 'shutdown /s /f /t 0' into focused window (no execution)");
-  this->begin_sequence_();
   this->type_string_("shutdown /s /f /t 0", 100);
 }
 
@@ -370,32 +379,23 @@ void UsbHidWakeupComponent::enqueue_acpi_powerdown_(uint32_t offset_ms) {
 }
 
 void UsbHidWakeupComponent::request_force_shutdown() {
-  if (!this->tinyusb_started_ || !tud_mounted()) {
-    ESP_LOGW(TAG, "force shutdown requested but USB not mounted — ignoring");
+  if (!this->ready_for_sequence_("force shutdown"))
     return;
-  }
   ESP_LOGW(TAG, "FORCE shutdown (type /f command — unlocked session)");
-  this->begin_sequence_();
   this->enqueue_force_macro_(0);
 }
 
 void UsbHidWakeupComponent::request_acpi_shutdown() {
-  if (!this->tinyusb_started_ || !tud_mounted()) {
-    ESP_LOGW(TAG, "ACPI shutdown requested but USB not mounted — ignoring");
+  if (!this->ready_for_sequence_("ACPI shutdown"))
     return;
-  }
   ESP_LOGW(TAG, "ACPI System Power Down (locked-safe, graceful)");
-  this->begin_sequence_();
   this->enqueue_acpi_powerdown_(0);
 }
 
 void UsbHidWakeupComponent::request_auto_shutdown() {
-  if (!this->tinyusb_started_ || !tud_mounted()) {
-    ESP_LOGW(TAG, "auto shutdown requested but USB not mounted — ignoring");
+  if (!this->ready_for_sequence_("auto shutdown"))
     return;
-  }
   ESP_LOGW(TAG, "AUTO shutdown (force macro + ACPI fallback)");
-  this->begin_sequence_();
   uint32_t after = this->enqueue_force_macro_(0);
   this->enqueue_acpi_powerdown_(after + 1100);
 }
