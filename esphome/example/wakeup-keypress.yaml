@@ -1,0 +1,68 @@
+# Target YAML once the usb_hid_wakeup component is implemented.
+# This file is a SPEC, not working code (the component doesn't exist yet).
+#
+# Once implemented, compile with:
+#   esphome run esphome/example/wakeup-keypress.yaml
+
+esphome:
+  name: esp-wakeup
+  friendly_name: ESP Wakeup Keypress
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf            # required: TinyUSB is not available on Arduino-S3
+    version: latest
+
+# Standard ESPHome housekeeping ----------------------------------------------
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "ESP-Wakeup Setup"  # captive portal fallback, built-in to ESPHome
+
+captive_portal:
+
+logger:
+  # On S3 with TinyUSB claiming USB OTG, point logger at UART0 (CH343)
+  # if the board has one. Otherwise leave default but expect no USB-CDC logs
+  # once the firmware boots.
+  hardware_uart: UART0
+  baud_rate: 115200
+
+api:                          # native ESPHome API → HA discovers auto
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Our custom component -------------------------------------------------------
+
+external_components:
+  - source: github://jbjardine/esp32-usb-VoWiFi
+    components: [usb_hid_wakeup]
+    refresh: 0s
+
+usb_hid_wakeup:
+  id: kbd
+  vid: 0x303A               # Espressif default VID
+  pid: 0x4004               # matches what master firmware advertises
+  manufacturer: "ESP"
+  product: "Wakeup Keyboard Device"
+  serial: "123456"
+
+button:
+  - platform: usb_hid_wakeup
+    name: "Wakeup PC"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power
+
+binary_sensor:
+  - platform: usb_hid_wakeup
+    name: "USB connected to host"
+    type: mounted
+    usb_hid_wakeup_id: kbd
+    device_class: connectivity
