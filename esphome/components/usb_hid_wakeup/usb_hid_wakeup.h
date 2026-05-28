@@ -40,6 +40,9 @@ class UsbHidWakeupComponent : public Component {
   // Sensor registration
   void register_mounted_sensor(binary_sensor::BinarySensor *bs) { this->mounted_sensors_.push_back(bs); }
   void register_suspended_sensor(binary_sensor::BinarySensor *bs) { this->suspended_sensors_.push_back(bs); }
+  // "awake" = host powered AND not asleep (mounted && !suspended) — the clean
+  // "PC usable right now" reading. It cannot tell sleep from full shutdown.
+  void register_awake_sensor(binary_sensor::BinarySensor *bs) { this->awake_sensors_.push_back(bs); }
 
   // USB identity config (Phase A) — defaults match the native firmware
   void set_usb_vid(uint16_t v) { this->vid_ = v; }
@@ -73,8 +76,10 @@ class UsbHidWakeupComponent : public Component {
 
   std::vector<binary_sensor::BinarySensor *> mounted_sensors_;
   std::vector<binary_sensor::BinarySensor *> suspended_sensors_;
+  std::vector<binary_sensor::BinarySensor *> awake_sensors_;
   bool last_mounted_{false};
   bool last_suspended_{false};
+  bool last_awake_{false};
   bool tinyusb_started_{false};
   bool initial_published_{false};  // force a first publish so HA shows on/off, not "unknown"
 
@@ -120,6 +125,7 @@ class UsbHidWakeupButton : public button::Button, public Parented<UsbHidWakeupCo
 
 class UsbHidWakeupMountedSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
 class UsbHidWakeupSuspendedSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
+class UsbHidWakeupAwakeSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
 
 }  // namespace usb_hid_wakeup
 }  // namespace esphome

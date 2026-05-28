@@ -140,11 +140,24 @@ pressing `force_shutdown`.
 `0x303A`, PID `0x4004`). Useful to disambiguate multiple devices or to satisfy a
 BIOS that filters wake-capable devices by VID:PID.
 
-## `suspended` binary sensor (v0.2)
+## Power-state binary sensors (v0.2)
 
-`binary_sensor:` with `type: suspended` reports whether the USB bus is suspended
-— i.e. **the host is asleep** — via `tud_suspend_cb`/`tud_resume_cb`. It is
-purely passive and never wakes the PC. Pairs well with `type: mounted`.
+Three `binary_sensor` types, all passive (none ever wakes the PC):
+
+| `type` | True when | Suggested `device_class` | French label |
+|---|---|---|---|
+| `awake` | host powered **and** not asleep (`mounted && !suspended`) | `running` | En marche / Arrêté |
+| `mounted` | USB enumerated to a host | `connectivity` | Connecté / Déconnecté |
+| `suspended` | USB bus suspended (host asleep **or** off) | — | Activé / Désactivé |
+
+**`awake` is the clean "is my PC on / usable now" reading** — use it as your
+single status entity. ⚠️ USB alone **cannot distinguish sleep (S3) from full
+shutdown (S5)**: both stop bus activity, so both read as not-awake. If you need
+to tell them apart, that requires an agent on the PC, not this device.
+
+Without a `device_class`, a binary_sensor shows the generic "Activé/Désactivé"
+(on/off) in French HA — set `device_class: running` on the `awake` sensor for
+the much clearer "En marche/Arrêté".
 
 ## Hardware requirement
 

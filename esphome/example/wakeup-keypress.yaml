@@ -81,12 +81,21 @@ button:
     icon: mdi:power-plug-off
 
 binary_sensor:
+  # Cleanest single reading: "PC on / usable now" (powered AND awake). With
+  # device_class running, HA shows "En marche" / "Arrêté". Note: USB alone
+  # cannot distinguish sleep from full shutdown — both read as "Arrêté".
+  - platform: usb_hid_wakeup
+    type: awake
+    name: "PC allumé"
+    usb_hid_wakeup_id: kbd
+    device_class: running
+
+  # Lower-level raw signals (optional)
   - platform: usb_hid_wakeup
     type: mounted
     name: "USB connected to host"
     usb_hid_wakeup_id: kbd
     device_class: connectivity
-
   - platform: usb_hid_wakeup
     type: suspended
     name: "PC asleep"

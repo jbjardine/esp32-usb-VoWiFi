@@ -268,6 +268,7 @@ void UsbHidWakeupComponent::loop() {
 
   bool mounted = tud_mounted();
   bool suspended = s_suspended;
+  bool awake = mounted && !suspended;  // host powered AND not asleep == usable now
 
   // First loop: publish current state so HA shows on/off instead of "unknown"
   // (change-detection alone never fires for a state that hasn't transitioned).
@@ -275,10 +276,13 @@ void UsbHidWakeupComponent::loop() {
     this->initial_published_ = true;
     this->last_mounted_ = mounted;
     this->last_suspended_ = suspended;
+    this->last_awake_ = awake;
     for (auto *bs : this->mounted_sensors_)
       bs->publish_state(mounted);
     for (auto *bs : this->suspended_sensors_)
       bs->publish_state(suspended);
+    for (auto *bs : this->awake_sensors_)
+      bs->publish_state(awake);
     return;
   }
 
@@ -295,6 +299,13 @@ void UsbHidWakeupComponent::loop() {
              suspended ? "asleep" : "awake");
     for (auto *bs : this->suspended_sensors_)
       bs->publish_state(suspended);
+  }
+
+  if (awake != this->last_awake_) {
+    this->last_awake_ = awake;
+    ESP_LOGD(TAG, "PC %s", awake ? "awake/on" : "asleep-or-off");
+    for (auto *bs : this->awake_sensors_)
+      bs->publish_state(awake);
   }
 }
 
