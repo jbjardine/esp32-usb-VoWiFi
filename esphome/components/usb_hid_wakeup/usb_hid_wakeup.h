@@ -76,6 +76,7 @@ class UsbHidWakeupComponent : public Component {
   bool last_mounted_{false};
   bool last_suspended_{false};
   bool tinyusb_started_{false};
+  bool initial_published_{false};  // force a first publish so HA shows on/off, not "unknown"
 
   // Phase A — configurable USB identity (defaults = native firmware values)
   uint16_t vid_{0x303A};
