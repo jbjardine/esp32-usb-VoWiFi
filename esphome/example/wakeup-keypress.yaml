@@ -46,13 +46,11 @@ external_components:
     components: [usb_hid_wakeup]
     refresh: 0s
 
+# VID/PID/strings are hardcoded at MVP to match the native firmware
+# (Espressif VID, product "Wakeup Keyboard Device"). Exposing them as YAML
+# options is on the roadmap — see esphome/README.md.
 usb_hid_wakeup:
   id: kbd
-  vid: 0x303A               # Espressif default VID
-  pid: 0x4004               # matches what master firmware advertises
-  manufacturer: "ESP"
-  product: "Wakeup Keyboard Device"
-  serial: "123456"
 
 button:
   - platform: usb_hid_wakeup
