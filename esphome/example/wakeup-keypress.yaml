@@ -1,0 +1,130 @@
+# Target YAML once the usb_hid_wakeup component is implemented.
+# This file is a SPEC, not working code (the component doesn't exist yet).
+#
+# Once implemented, compile with:
+#   esphome run esphome/example/wakeup-keypress.yaml
+
+esphome:
+  name: esp-wakeup
+  friendly_name: ESP Wakeup Keypress
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf            # required: TinyUSB is not available on Arduino-S3
+    version: latest
+
+# Standard ESPHome housekeeping ----------------------------------------------
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "ESP-Wakeup Setup"  # captive portal fallback, built-in to ESPHome
+
+captive_portal:
+
+logger:
+  # On S3 with TinyUSB claiming USB OTG, point logger at UART0 (CH343)
+  # if the board has one. Otherwise leave default but expect no USB-CDC logs
+  # once the firmware boots.
+  hardware_uart: UART0
+  baud_rate: 115200
+
+api:                          # native ESPHome API → HA discovers auto
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Our custom component -------------------------------------------------------
+
+external_components:
+  - source: github://jbjardine/esp32-usb-VoWiFi
+    components: [usb_hid_wakeup]
+    refresh: 0s
+
+usb_hid_wakeup:
+  id: kbd
+  # Optional — defaults shown. keyboard_layout matters for force_shutdown typing.
+  vid: 0x303A
+  pid: 0x4004
+  manufacturer: "ESP"
+  product: "Wakeup Keyboard Device"
+  serial: "123456"
+  keyboard_layout: azerty   # azerty | us  (target host's Windows layout)
+
+button:
+  - platform: usb_hid_wakeup
+    type: wakeup
+    name: "Wakeup PC"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power
+
+  # SAFE diagnostic: open Notepad on the host, focus it, enable+press this — it
+  # types "shutdown /s /f /t 0" with NO execution, to validate keyboard_layout.
+  # Hidden by default in HA (disabled_by_default) and filed under Diagnostic;
+  # stays compiled in the firmware so you can re-enable it any time.
+  - platform: usb_hid_wakeup
+    type: type_test
+    name: "Type test (Notepad)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:keyboard
+    disabled_by_default: true
+    entity_category: diagnostic
+
+  # DANGEROUS shutdown buttons (Windows). Recommend a confirmation dialog on
+  # the HA card (tap_action: confirmation) for each.
+  #
+  # force_shutdown: types "shutdown /s /f /t 0" — true force (/f kills apps).
+  #   Works only on an UNLOCKED session (Win+R is blocked on the lock screen).
+  - platform: usb_hid_wakeup
+    type: force_shutdown
+    name: "Force shutdown (unlocked)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power-plug-off
+  # acpi_shutdown: ACPI System Power Down only, no typing — works even LOCKED.
+  #   Graceful (apps may delay it). Requires Windows power-button action = Shut down.
+  - platform: usb_hid_wakeup
+    type: acpi_shutdown
+    name: "Shutdown ACPI (locked)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power
+  # auto_shutdown: force macro then ACPI fallback — covers both lock states in
+  #   one press (the previous combined behavior). Optional.
+  - platform: usb_hid_wakeup
+    type: auto_shutdown
+    name: "Shutdown (auto)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power-settings
+    disabled_by_default: true
+
+# Single diagnostic status entity — "Awake" / "Asleep or off" / "Disconnected".
+# This is the recommended one-entity status. (USB cannot tell sleep from full
+# shutdown, hence the combined "Asleep or off" state.)
+text_sensor:
+  - platform: usb_hid_wakeup
+    name: "PC status"
+    usb_hid_wakeup_id: kbd
+    entity_category: diagnostic
+    icon: mdi:monitor
+
+# Optional raw binary signals — uncomment if you prefer separate on/off entities
+# instead of (or in addition to) the text status above.
+# binary_sensor:
+#   - platform: usb_hid_wakeup
+#     type: awake
+#     name: "PC allumé"
+#     usb_hid_wakeup_id: kbd
+#     device_class: running
+#   - platform: usb_hid_wakeup
+#     type: mounted
+#     name: "USB connected to host"
+#     usb_hid_wakeup_id: kbd
+#     device_class: connectivity
+#   - platform: usb_hid_wakeup
+#     type: suspended
+#     name: "PC asleep"
+#     usb_hid_wakeup_id: kbd

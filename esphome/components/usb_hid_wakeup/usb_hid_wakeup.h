@@ -1,0 +1,153 @@
+#pragma once
+
+#include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
+#include "esphome/components/button/button.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
+
+#include <tinyusb.h>  // tusb_desc_device_t
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace esphome {
+namespace usb_hid_wakeup {
+
+enum KeyboardLayout : uint8_t {
+  LAYOUT_AZERTY = 0,
+  LAYOUT_US = 1,
+};
+
+enum ButtonAction : uint8_t {
+  ACTION_WAKEUP = 0,
+  ACTION_FORCE_SHUTDOWN = 1,  // type "shutdown /s /f /t 0" only (unlocked)
+  ACTION_TYPE_TEST = 2,       // type the command, no Enter (diagnostic)
+  ACTION_ACPI_SHUTDOWN = 3,   // ACPI System Power Down only (locked-safe)
+  ACTION_AUTO_SHUTDOWN = 4,   // force macro + ACPI fallback (covers both)
+};
+
+class UsbHidWakeupComponent : public Component {
+ public:
+  void setup() override;
+  void loop() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::DATA; }
+
+  // Button actions
+  void request_wakeup();
+  void request_force_shutdown();  // type /f command only (unlocked session)
+  void request_acpi_shutdown();   // ACPI System Power Down only (locked-safe)
+  void request_auto_shutdown();   // force macro + ACPI fallback
+  void request_type_test();       // type the command into the focused window, no execution
+
+  // Sensor registration
+  void register_mounted_sensor(binary_sensor::BinarySensor *bs) { this->mounted_sensors_.push_back(bs); }
+  void register_suspended_sensor(binary_sensor::BinarySensor *bs) { this->suspended_sensors_.push_back(bs); }
+  // "awake" = host powered AND not asleep (mounted && !suspended) — the clean
+  // "PC usable right now" reading. It cannot tell sleep from full shutdown.
+  void register_awake_sensor(binary_sensor::BinarySensor *bs) { this->awake_sensors_.push_back(bs); }
+  // Single diagnostic text status: "Awake" / "Asleep or off" / "Disconnected".
+  void register_status_text_sensor(text_sensor::TextSensor *ts) { this->status_text_sensors_.push_back(ts); }
+
+  // USB identity config (Phase A) — defaults match the native firmware
+  void set_usb_vid(uint16_t v) { this->vid_ = v; }
+  void set_usb_pid(uint16_t v) { this->pid_ = v; }
+  void set_manufacturer(const std::string &s) { this->manufacturer_ = s; }
+  void set_product(const std::string &s) { this->product_ = s; }
+  void set_serial(const std::string &s) { this->serial_ = s; }
+  void set_keyboard_layout(KeyboardLayout l) { this->layout_ = l; }
+
+ protected:
+  // Keyboard typing engine (Phase C) — event queue drained in loop().
+  // We do NOT use set_timeout(): empty/duplicate names cancel each other in the
+  // ESPHome scheduler, and EP-busy drops need tud_hid_ready() gating. The queue
+  // gives ordered, drop-free delivery paced by due-times + tud_hid_ready().
+  enum EvtKind : uint8_t { EVT_KBD = 0, EVT_SYSCTRL = 1 };
+  struct UsbEvent {
+    uint32_t due;      // absolute millis() at/after which to fire
+    EvtKind kind;
+    uint8_t modifier;  // EVT_KBD: HID modifier mask
+    uint8_t keycode;   // EVT_KBD: keycode (0 = release all)
+    uint8_t payload;   // EVT_SYSCTRL: report byte
+  };
+
+  bool char_to_keycode_(char c, uint8_t &keycode, bool &shift) const;
+  // Shared guard for the sequence-emitting buttons: warns+returns false if USB
+  // isn't ready, otherwise begins a fresh sequence and returns true.
+  bool ready_for_sequence_(const char *what);
+  void begin_sequence_();  // clears any in-flight sequence, resets the time base
+  void enqueue_key_(uint32_t offset_ms, uint8_t modifier, uint8_t keycode);
+  void enqueue_sysctrl_(uint32_t offset_ms, uint8_t payload);
+  // Enqueues press+release per char; returns the offset just past the last key.
+  uint32_t type_string_(const std::string &text, uint32_t start_offset_ms);
+  // Enqueues Win+R + "shutdown /s /f /t 0" + Enter; returns end offset.
+  uint32_t enqueue_force_macro_(uint32_t start_offset_ms);
+  void enqueue_acpi_powerdown_(uint32_t offset_ms);
+  void process_events_();  // called from loop()
+
+  std::vector<binary_sensor::BinarySensor *> mounted_sensors_;
+  std::vector<binary_sensor::BinarySensor *> suspended_sensors_;
+  std::vector<binary_sensor::BinarySensor *> awake_sensors_;
+  std::vector<text_sensor::TextSensor *> status_text_sensors_;
+  bool last_mounted_{false};
+  bool last_suspended_{false};
+  bool last_awake_{false};
+  const char *last_status_{nullptr};
+  bool tinyusb_started_{false};
+  bool initial_published_{false};  // force a first publish so HA shows on/off, not "unknown"
+
+  // Phase A — configurable USB identity (defaults = native firmware values)
+  uint16_t vid_{0x303A};
+  uint16_t pid_{0x4004};
+  std::string manufacturer_{"ESP"};
+  std::string product_{"Wakeup Keyboard Device"};
+  std::string serial_{"123456"};
+  KeyboardLayout layout_{LAYOUT_AZERTY};
+
+  // Pending keystroke/sysctrl events (Phase C)
+  std::vector<UsbEvent> events_;
+  size_t event_cursor_{0};
+  uint32_t seq_base_{0};
+
+  // Backing storage handed to TinyUSB at install time — must outlive setup().
+  tusb_desc_device_t dev_desc_{};
+  const char *strings_[5]{};
+};
+
+class UsbHidWakeupButton : public button::Button, public Parented<UsbHidWakeupComponent> {
+ public:
+  void set_action(ButtonAction a) { this->action_ = a; }
+
+ protected:
+  void press_action() override {
+    switch (this->action_) {
+      case ACTION_FORCE_SHUTDOWN:
+        this->parent_->request_force_shutdown();
+        break;
+      case ACTION_ACPI_SHUTDOWN:
+        this->parent_->request_acpi_shutdown();
+        break;
+      case ACTION_AUTO_SHUTDOWN:
+        this->parent_->request_auto_shutdown();
+        break;
+      case ACTION_TYPE_TEST:
+        this->parent_->request_type_test();
+        break;
+      case ACTION_WAKEUP:
+      default:
+        this->parent_->request_wakeup();
+        break;
+    }
+  }
+  ButtonAction action_{ACTION_WAKEUP};
+};
+
+class UsbHidWakeupMountedSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
+class UsbHidWakeupSuspendedSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
+class UsbHidWakeupAwakeSensor : public binary_sensor::BinarySensor, public Parented<UsbHidWakeupComponent> {};
+class UsbHidWakeupStatusTextSensor : public text_sensor::TextSensor, public Parented<UsbHidWakeupComponent> {};
+
+}  // namespace usb_hid_wakeup
+}  // namespace esphome

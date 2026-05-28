@@ -7,3 +7,7 @@
 /managed_components
 /docs
 .DS_Store
+
+# Python bytecode (ESPHome external components)
+__pycache__/
+*.pyc
