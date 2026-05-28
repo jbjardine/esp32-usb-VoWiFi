@@ -75,13 +75,31 @@ button:
     disabled_by_default: true
     entity_category: diagnostic
 
-  # DANGEROUS: forces a Windows shutdown (closes apps without saving).
-  # Recommend a confirmation dialog on the HA card (tap_action: confirmation).
+  # DANGEROUS shutdown buttons (Windows). Recommend a confirmation dialog on
+  # the HA card (tap_action: confirmation) for each.
+  #
+  # force_shutdown: types "shutdown /s /f /t 0" — true force (/f kills apps).
+  #   Works only on an UNLOCKED session (Win+R is blocked on the lock screen).
   - platform: usb_hid_wakeup
     type: force_shutdown
-    name: "Force shutdown PC"
+    name: "Force shutdown (unlocked)"
     usb_hid_wakeup_id: kbd
     icon: mdi:power-plug-off
+  # acpi_shutdown: ACPI System Power Down only, no typing — works even LOCKED.
+  #   Graceful (apps may delay it). Requires Windows power-button action = Shut down.
+  - platform: usb_hid_wakeup
+    type: acpi_shutdown
+    name: "Shutdown ACPI (locked)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power
+  # auto_shutdown: force macro then ACPI fallback — covers both lock states in
+  #   one press (the previous combined behavior). Optional.
+  - platform: usb_hid_wakeup
+    type: auto_shutdown
+    name: "Shutdown (auto)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power-settings
+    disabled_by_default: true
 
 # Single diagnostic status entity — "Awake" / "Asleep or off" / "Disconnected".
 # This is the recommended one-entity status. (USB cannot tell sleep from full

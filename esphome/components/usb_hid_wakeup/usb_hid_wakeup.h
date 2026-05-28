@@ -22,8 +22,10 @@ enum KeyboardLayout : uint8_t {
 
 enum ButtonAction : uint8_t {
   ACTION_WAKEUP = 0,
-  ACTION_FORCE_SHUTDOWN = 1,
-  ACTION_TYPE_TEST = 2,
+  ACTION_FORCE_SHUTDOWN = 1,  // type "shutdown /s /f /t 0" only (unlocked)
+  ACTION_TYPE_TEST = 2,       // type the command, no Enter (diagnostic)
+  ACTION_ACPI_SHUTDOWN = 3,   // ACPI System Power Down only (locked-safe)
+  ACTION_AUTO_SHUTDOWN = 4,   // force macro + ACPI fallback (covers both)
 };
 
 class UsbHidWakeupComponent : public Component {
@@ -35,8 +37,10 @@ class UsbHidWakeupComponent : public Component {
 
   // Button actions
   void request_wakeup();
-  void request_force_shutdown();
-  void request_type_test();  // types the shutdown command into the focused window, no execution
+  void request_force_shutdown();  // type /f command only (unlocked session)
+  void request_acpi_shutdown();   // ACPI System Power Down only (locked-safe)
+  void request_auto_shutdown();   // force macro + ACPI fallback
+  void request_type_test();       // type the command into the focused window, no execution
 
   // Sensor registration
   void register_mounted_sensor(binary_sensor::BinarySensor *bs) { this->mounted_sensors_.push_back(bs); }
@@ -75,6 +79,9 @@ class UsbHidWakeupComponent : public Component {
   void enqueue_sysctrl_(uint32_t offset_ms, uint8_t payload);
   // Enqueues press+release per char; returns the offset just past the last key.
   uint32_t type_string_(const std::string &text, uint32_t start_offset_ms);
+  // Enqueues Win+R + "shutdown /s /f /t 0" + Enter; returns end offset.
+  uint32_t enqueue_force_macro_(uint32_t start_offset_ms);
+  void enqueue_acpi_powerdown_(uint32_t offset_ms);
   void process_events_();  // called from loop()
 
   std::vector<binary_sensor::BinarySensor *> mounted_sensors_;
@@ -115,6 +122,12 @@ class UsbHidWakeupButton : public button::Button, public Parented<UsbHidWakeupCo
     switch (this->action_) {
       case ACTION_FORCE_SHUTDOWN:
         this->parent_->request_force_shutdown();
+        break;
+      case ACTION_ACPI_SHUTDOWN:
+        this->parent_->request_acpi_shutdown();
+        break;
+      case ACTION_AUTO_SHUTDOWN:
+        this->parent_->request_auto_shutdown();
         break;
       case ACTION_TYPE_TEST:
         this->parent_->request_type_test();

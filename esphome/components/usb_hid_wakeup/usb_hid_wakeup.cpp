@@ -346,29 +346,50 @@ void UsbHidWakeupComponent::request_type_test() {
   this->type_string_("shutdown /s /f /t 0", 100);
 }
 
+uint32_t UsbHidWakeupComponent::enqueue_force_macro_(uint32_t start_offset_ms) {
+  // Win+R -> wait for Run dialog -> type "shutdown /s /f /t 0" -> Enter.
+  this->enqueue_key_(start_offset_ms, KEYBOARD_MODIFIER_LEFTGUI, HID_KEY_R);
+  this->enqueue_key_(start_offset_ms + 60, 0, 0);
+  uint32_t after_type = this->type_string_("shutdown /s /f /t 0", start_offset_ms + 600);
+  this->enqueue_key_(after_type + 80, 0, HID_KEY_ENTER);
+  this->enqueue_key_(after_type + 130, 0, 0);
+  return after_type + 130;
+}
+
+void UsbHidWakeupComponent::enqueue_acpi_powerdown_(uint32_t offset_ms) {
+  this->enqueue_sysctrl_(offset_ms, 1);       // 1 = System Power Down
+  this->enqueue_sysctrl_(offset_ms + 60, 0);  // release
+}
+
 void UsbHidWakeupComponent::request_force_shutdown() {
   if (!this->tinyusb_started_ || !tud_mounted()) {
     ESP_LOGW(TAG, "force shutdown requested but USB not mounted — ignoring");
     return;
   }
-  ESP_LOGW(TAG, "FORCE SHUTDOWN sequence initiated (Windows)");
+  ESP_LOGW(TAG, "FORCE shutdown (type /f command — unlocked session)");
   this->begin_sequence_();
+  this->enqueue_force_macro_(0);
+}
 
-  // Leg 1 (unlocked session): Win+R, then type the forced-shutdown command.
-  this->enqueue_key_(0, KEYBOARD_MODIFIER_LEFTGUI, HID_KEY_R);  // Win+R press
-  this->enqueue_key_(60, 0, 0);                                 // release
+void UsbHidWakeupComponent::request_acpi_shutdown() {
+  if (!this->tinyusb_started_ || !tud_mounted()) {
+    ESP_LOGW(TAG, "ACPI shutdown requested but USB not mounted — ignoring");
+    return;
+  }
+  ESP_LOGW(TAG, "ACPI System Power Down (locked-safe, graceful)");
+  this->begin_sequence_();
+  this->enqueue_acpi_powerdown_(0);
+}
 
-  // Wait for the Run dialog to appear, then type the command.
-  uint32_t after_type = this->type_string_("shutdown /s /f /t 0", 600);
-
-  // Enter to execute.
-  this->enqueue_key_(after_type + 80, 0, HID_KEY_ENTER);
-  this->enqueue_key_(after_type + 130, 0, 0);
-
-  // Leg 2 (locked session fallback): ACPI System Power Down (1=power down),
-  // then release. Harmless if the machine is already shutting down from leg 1.
-  this->enqueue_sysctrl_(after_type + 1200, 1);
-  this->enqueue_sysctrl_(after_type + 1260, 0);
+void UsbHidWakeupComponent::request_auto_shutdown() {
+  if (!this->tinyusb_started_ || !tud_mounted()) {
+    ESP_LOGW(TAG, "auto shutdown requested but USB not mounted — ignoring");
+    return;
+  }
+  ESP_LOGW(TAG, "AUTO shutdown (force macro + ACPI fallback)");
+  this->begin_sequence_();
+  uint32_t after = this->enqueue_force_macro_(0);
+  this->enqueue_acpi_powerdown_(after + 1100);
 }
 
 void UsbHidWakeupComponent::dump_config() {

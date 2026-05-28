@@ -99,14 +99,21 @@ identical to the native firmware (`main/usb.c:16-64`), including the
 
 ## Force-shutdown a Windows PC (v0.2)
 
-`button:` with `type: force_shutdown` forces the **Windows** host to power off,
-even with apps/sessions open. There is no SysRq-style un-blockable kernel
-sequence on Windows, so this combines two legs in one press:
+Shutting down a **Windows** host has no SysRq-style un-blockable kernel
+sequence, and the two available mechanisms each only fit one lock state. So
+they are exposed as **three explicit button types** — pick per situation:
 
-1. **Unlocked session (true force)**: `Win+R` → types `shutdown /s /f /t 0` →
-   `Enter`. The `/f` flag force-closes apps without "save your work" prompts.
-2. **Locked session (graceful fallback)**: an ACPI **System Power Down** HID
-   usage (works at the lock screen, but apps can delay/block it).
+| `button` `type` | What it does | Use when |
+|---|---|---|
+| `force_shutdown` | `Win+R` → types `shutdown /s /f /t 0` → `Enter`. `/f` force-closes apps. | session **unlocked** (true force) |
+| `acpi_shutdown` | ACPI **System Power Down** HID usage only, no typing | session **locked** (graceful) |
+| `auto_shutdown` | force macro then ACPI fallback, one press | covers both, but stateful |
+
+⚠️ `force_shutdown` on a **locked** screen does nothing useful — `Win+R` is
+blocked and the typed characters land in the password field (one failed login
+attempt). Use `acpi_shutdown` when locked. `acpi_shutdown` is **graceful**
+(apps may delay it) and needs the Windows power-button action set to
+**Shut down** (below).
 
 ### Keyboard layout matters
 

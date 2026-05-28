@@ -2,7 +2,9 @@
 
 Button types:
   - wakeup (default): tud_remote_wakeup() to wake a sleeping host
-  - force_shutdown:   Win+R "shutdown /s /f /t 0" macro + ACPI power down (Windows)
+  - force_shutdown:   types "shutdown /s /f /t 0" only — true force, UNLOCKED session
+  - acpi_shutdown:    ACPI System Power Down only (no typing) — works LOCKED, graceful
+  - auto_shutdown:    force macro + ACPI fallback (covers both lock states)
   - type_test:        SAFE — types the shutdown command into the focused window
                       (no Win+R, no Enter, no power down) to validate keyboard_layout
 """
@@ -21,6 +23,8 @@ ButtonAction = usb_hid_wakeup_ns.enum("ButtonAction")
 TYPES = {
     "wakeup": ButtonAction.ACTION_WAKEUP,
     "force_shutdown": ButtonAction.ACTION_FORCE_SHUTDOWN,
+    "acpi_shutdown": ButtonAction.ACTION_ACPI_SHUTDOWN,
+    "auto_shutdown": ButtonAction.ACTION_AUTO_SHUTDOWN,
     "type_test": ButtonAction.ACTION_TYPE_TEST,
 }
 
