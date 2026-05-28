@@ -11,6 +11,7 @@
 
 #include "usb_hid_wakeup.h"
 #include "esphome/core/log.h"
+#include "esphome/core/hal.h"  // millis()
 
 #include <tinyusb.h>
 #include <tinyusb_default_config.h>
@@ -137,25 +138,26 @@ bool UsbHidWakeupComponent::char_to_keycode_(char c, uint8_t &keycode, bool &shi
   }
 }
 
-// ----- Low-level keyboard send ----------------------------------------------
+// ----- Event queue (typing engine) ------------------------------------------
 
-void UsbHidWakeupComponent::send_key_(uint8_t modifier, uint8_t keycode) {
-  if (!tud_mounted())
-    return;
-  uint8_t kc[6] = {keycode, 0, 0, 0, 0, 0};
-  tud_hid_keyboard_report(REPORT_ID_KEYBOARD, modifier, kc);
+void UsbHidWakeupComponent::begin_sequence_() {
+  this->events_.clear();
+  this->event_cursor_ = 0;
+  this->seq_base_ = millis();
 }
 
-void UsbHidWakeupComponent::release_keys_() {
-  if (!tud_mounted())
-    return;
-  tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
+void UsbHidWakeupComponent::enqueue_key_(uint32_t offset_ms, uint8_t modifier, uint8_t keycode) {
+  this->events_.push_back(UsbEvent{this->seq_base_ + offset_ms, EVT_KBD, modifier, keycode, 0});
 }
 
-uint32_t UsbHidWakeupComponent::type_string_(const std::string &text, uint32_t start_delay_ms) {
-  const uint32_t key_ms = 22;  // press duration
-  const uint32_t gap_ms = 16;  // release-to-next gap
-  uint32_t t = start_delay_ms;
+void UsbHidWakeupComponent::enqueue_sysctrl_(uint32_t offset_ms, uint8_t payload) {
+  this->events_.push_back(UsbEvent{this->seq_base_ + offset_ms, EVT_SYSCTRL, 0, 0, payload});
+}
+
+uint32_t UsbHidWakeupComponent::type_string_(const std::string &text, uint32_t start_offset_ms) {
+  const uint32_t key_hold_ms = 40;   // press persists this long before release
+  const uint32_t inter_key_ms = 25;  // gap between a release and the next press
+  uint32_t t = start_offset_ms;
   for (char c : text) {
     uint8_t keycode;
     bool shift;
@@ -164,24 +166,50 @@ uint32_t UsbHidWakeupComponent::type_string_(const std::string &text, uint32_t s
       continue;
     }
     uint8_t mod = shift ? KEYBOARD_MODIFIER_LEFTSHIFT : 0;
-    this->set_timeout("", t, [this, mod, keycode]() { this->send_key_(mod, keycode); });
-    this->set_timeout("", t + key_ms, [this]() { this->release_keys_(); });
-    t += key_ms + gap_ms;
+    this->enqueue_key_(t, mod, keycode);            // press
+    this->enqueue_key_(t + key_hold_ms, 0, 0);      // release all
+    t += key_hold_ms + inter_key_ms;
   }
   return t;
 }
 
-void UsbHidWakeupComponent::send_system_power_down_() {
-  if (!tud_mounted())
+void UsbHidWakeupComponent::process_events_() {
+  if (this->event_cursor_ >= this->events_.size())
     return;
-  uint8_t down = 1;  // 2-bit field: 1=System Power Down, 2=Sleep, 3=Wake
-  tud_hid_report(REPORT_ID_SYSCTRL, &down, sizeof(down));
-  this->set_timeout("", 60, [this]() {
-    if (!tud_mounted())
+
+  const uint32_t now = millis();
+  while (this->event_cursor_ < this->events_.size()) {
+    UsbEvent &e = this->events_[this->event_cursor_];
+    if ((int32_t) (now - e.due) < 0)
+      break;  // not due yet
+    if (!tud_mounted()) {
+      ESP_LOGW(TAG, "host vanished mid-sequence — aborting");
+      this->events_.clear();
+      this->event_cursor_ = 0;
       return;
-    uint8_t release = 0;
-    tud_hid_report(REPORT_ID_SYSCTRL, &release, sizeof(release));
-  });
+    }
+    if (!tud_hid_ready())
+      break;  // endpoint busy — retry next loop (prevents dropped reports)
+
+    if (e.kind == EVT_KBD) {
+      if (e.keycode == 0) {
+        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);  // release all
+      } else {
+        uint8_t kc[6] = {e.keycode, 0, 0, 0, 0, 0};
+        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, e.modifier, kc);
+      }
+    } else {  // EVT_SYSCTRL
+      tud_hid_report(REPORT_ID_SYSCTRL, &e.payload, 1);
+    }
+    this->event_cursor_++;
+    // tud_hid_ready() is now false (EP busy) so the next iteration breaks —
+    // effectively one report per loop when events are back-to-back.
+  }
+
+  if (this->event_cursor_ >= this->events_.size()) {
+    this->events_.clear();
+    this->event_cursor_ = 0;
+  }
 }
 
 // ----- Component lifecycle --------------------------------------------------
@@ -236,6 +264,8 @@ void UsbHidWakeupComponent::loop() {
   if (!this->tinyusb_started_)
     return;
 
+  this->process_events_();
+
   bool mounted = tud_mounted();
   if (mounted != this->last_mounted_) {
     this->last_mounted_ = mounted;
@@ -276,6 +306,7 @@ void UsbHidWakeupComponent::request_type_test() {
   // Notepad first), with NO Win+R, NO Enter, NO power down. Use it to verify
   // the keyboard_layout produces the exact text before trusting force_shutdown.
   ESP_LOGI(TAG, "type test: typing 'shutdown /s /f /t 0' into focused window (no execution)");
+  this->begin_sequence_();
   this->type_string_("shutdown /s /f /t 0", 100);
 }
 
@@ -285,21 +316,23 @@ void UsbHidWakeupComponent::request_force_shutdown() {
     return;
   }
   ESP_LOGW(TAG, "FORCE SHUTDOWN sequence initiated (Windows)");
+  this->begin_sequence_();
 
   // Leg 1 (unlocked session): Win+R, then type the forced-shutdown command.
-  this->set_timeout("", 0, [this]() { this->send_key_(KEYBOARD_MODIFIER_LEFTGUI, HID_KEY_R); });
-  this->set_timeout("", 60, [this]() { this->release_keys_(); });
+  this->enqueue_key_(0, KEYBOARD_MODIFIER_LEFTGUI, HID_KEY_R);  // Win+R press
+  this->enqueue_key_(60, 0, 0);                                 // release
 
   // Wait for the Run dialog to appear, then type the command.
   uint32_t after_type = this->type_string_("shutdown /s /f /t 0", 600);
 
   // Enter to execute.
-  this->set_timeout("", after_type + 80, [this]() { this->send_key_(0, HID_KEY_ENTER); });
-  this->set_timeout("", after_type + 130, [this]() { this->release_keys_(); });
+  this->enqueue_key_(after_type + 80, 0, HID_KEY_ENTER);
+  this->enqueue_key_(after_type + 130, 0, 0);
 
-  // Leg 2 (locked session fallback): ACPI System Power Down. Harmless if the
-  // machine is already shutting down from leg 1.
-  this->set_timeout("", after_type + 1200, [this]() { this->send_system_power_down_(); });
+  // Leg 2 (locked session fallback): ACPI System Power Down (1=power down),
+  // then release. Harmless if the machine is already shutting down from leg 1.
+  this->enqueue_sysctrl_(after_type + 1200, 1);
+  this->enqueue_sysctrl_(after_type + 1260, 0);
 }
 
 void UsbHidWakeupComponent::dump_config() {

@@ -50,13 +50,26 @@ class UsbHidWakeupComponent : public Component {
   void set_keyboard_layout(KeyboardLayout l) { this->layout_ = l; }
 
  protected:
-  // Keyboard typing engine (Phase C)
-  void send_key_(uint8_t modifier, uint8_t keycode);
-  void release_keys_();
+  // Keyboard typing engine (Phase C) — event queue drained in loop().
+  // We do NOT use set_timeout(): empty/duplicate names cancel each other in the
+  // ESPHome scheduler, and EP-busy drops need tud_hid_ready() gating. The queue
+  // gives ordered, drop-free delivery paced by due-times + tud_hid_ready().
+  enum EvtKind : uint8_t { EVT_KBD = 0, EVT_SYSCTRL = 1 };
+  struct UsbEvent {
+    uint32_t due;      // absolute millis() at/after which to fire
+    EvtKind kind;
+    uint8_t modifier;  // EVT_KBD: HID modifier mask
+    uint8_t keycode;   // EVT_KBD: keycode (0 = release all)
+    uint8_t payload;   // EVT_SYSCTRL: report byte
+  };
+
   bool char_to_keycode_(char c, uint8_t &keycode, bool &shift) const;
-  // Returns the time offset (ms) just after the last scheduled keystroke.
-  uint32_t type_string_(const std::string &text, uint32_t start_delay_ms);
-  void send_system_power_down_();
+  void begin_sequence_();  // clears any in-flight sequence, resets the time base
+  void enqueue_key_(uint32_t offset_ms, uint8_t modifier, uint8_t keycode);
+  void enqueue_sysctrl_(uint32_t offset_ms, uint8_t payload);
+  // Enqueues press+release per char; returns the offset just past the last key.
+  uint32_t type_string_(const std::string &text, uint32_t start_offset_ms);
+  void process_events_();  // called from loop()
 
   std::vector<binary_sensor::BinarySensor *> mounted_sensors_;
   std::vector<binary_sensor::BinarySensor *> suspended_sensors_;
@@ -71,6 +84,11 @@ class UsbHidWakeupComponent : public Component {
   std::string product_{"Wakeup Keyboard Device"};
   std::string serial_{"123456"};
   KeyboardLayout layout_{LAYOUT_AZERTY};
+
+  // Pending keystroke/sysctrl events (Phase C)
+  std::vector<UsbEvent> events_;
+  size_t event_cursor_{0};
+  uint32_t seq_base_{0};
 
   // Backing storage handed to TinyUSB at install time — must outlive setup().
   tusb_desc_device_t dev_desc_{};
