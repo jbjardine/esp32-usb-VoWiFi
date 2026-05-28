@@ -3,6 +3,7 @@
 #include "mqtt.h"
 
 #include <tinyusb.h>
+#include <tinyusb_default_config.h>
 #include <class/hid/hid_device.h>
 #include <esp_log.h>
 #include <freertos/event_groups.h>
@@ -105,6 +106,7 @@ void usb_init(void) {
 	ESP_LOGI(TAG, "usb init");
 	usb_event_group = xEventGroupCreate();
 	const tinyusb_config_t tusb_cfg = {
+		.task = TINYUSB_TASK_DEFAULT(),
 		.descriptor = {
 			.device = NULL,
 			.string = hid_string_descriptor,
