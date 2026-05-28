@@ -19,6 +19,9 @@ from esphome.core import CORE
 
 CODEOWNERS = ["@jbjardine"]
 DEPENDENCIES = ["esp32"]
+# The C++ component unconditionally references these domains' headers, so make
+# sure they're always compiled in even if the user only declares some of them.
+AUTO_LOAD = ["binary_sensor", "text_sensor", "button"]
 MULTI_CONF = False
 
 # esp_tinyusb 2.2.0 matches what the native firmware on `master` validated.

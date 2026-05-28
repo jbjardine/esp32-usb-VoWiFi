@@ -63,14 +63,17 @@ button:
     usb_hid_wakeup_id: kbd
     icon: mdi:power
 
-  # SAFE diagnostic: open Notepad on the host, focus it, press this — it types
-  # "shutdown /s /f /t 0" with NO execution. Verify the text is exact (w / 0)
-  # before trusting the force_shutdown button below. Remove once validated.
+  # SAFE diagnostic: open Notepad on the host, focus it, enable+press this — it
+  # types "shutdown /s /f /t 0" with NO execution, to validate keyboard_layout.
+  # Hidden by default in HA (disabled_by_default) and filed under Diagnostic;
+  # stays compiled in the firmware so you can re-enable it any time.
   - platform: usb_hid_wakeup
     type: type_test
     name: "Type test (Notepad)"
     usb_hid_wakeup_id: kbd
     icon: mdi:keyboard
+    disabled_by_default: true
+    entity_category: diagnostic
 
   # DANGEROUS: forces a Windows shutdown (closes apps without saving).
   # Recommend a confirmation dialog on the HA card (tap_action: confirmation).
@@ -80,23 +83,30 @@ button:
     usb_hid_wakeup_id: kbd
     icon: mdi:power-plug-off
 
-binary_sensor:
-  # Cleanest single reading: "PC on / usable now" (powered AND awake). With
-  # device_class running, HA shows "En marche" / "Arrêté". Note: USB alone
-  # cannot distinguish sleep from full shutdown — both read as "Arrêté".
+# Single diagnostic status entity — "Awake" / "Asleep or off" / "Disconnected".
+# This is the recommended one-entity status. (USB cannot tell sleep from full
+# shutdown, hence the combined "Asleep or off" state.)
+text_sensor:
   - platform: usb_hid_wakeup
-    type: awake
-    name: "PC allumé"
+    name: "PC status"
     usb_hid_wakeup_id: kbd
-    device_class: running
+    entity_category: diagnostic
+    icon: mdi:monitor
 
-  # Lower-level raw signals (optional)
-  - platform: usb_hid_wakeup
-    type: mounted
-    name: "USB connected to host"
-    usb_hid_wakeup_id: kbd
-    device_class: connectivity
-  - platform: usb_hid_wakeup
-    type: suspended
-    name: "PC asleep"
-    usb_hid_wakeup_id: kbd
+# Optional raw binary signals — uncomment if you prefer separate on/off entities
+# instead of (or in addition to) the text status above.
+# binary_sensor:
+#   - platform: usb_hid_wakeup
+#     type: awake
+#     name: "PC allumé"
+#     usb_hid_wakeup_id: kbd
+#     device_class: running
+#   - platform: usb_hid_wakeup
+#     type: mounted
+#     name: "USB connected to host"
+#     usb_hid_wakeup_id: kbd
+#     device_class: connectivity
+#   - platform: usb_hid_wakeup
+#     type: suspended
+#     name: "PC asleep"
+#     usb_hid_wakeup_id: kbd
