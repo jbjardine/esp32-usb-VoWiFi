@@ -280,8 +280,11 @@ void UsbHidWakeupComponent::loop() {
   bool mounted = tud_mounted();
   bool suspended = s_suspended;
   bool awake = mounted && !suspended;  // host powered AND not asleep == usable now
-  // 3-state diagnostic string (USB can't tell sleep from full shutdown).
-  const char *status = !mounted ? "Disconnected" : (suspended ? "Asleep or off" : "Awake");
+  // 3-state diagnostic string matching observed reality on the host:
+  //   enumerated + active  -> "Allumé"  (PC on)
+  //   enumerated + suspended -> "Veille" (PC in S3 sleep, bus suspended)
+  //   not enumerated        -> "Éteint" (PC off in S5 de-enumerates; also cable unplugged)
+  const char *status = !mounted ? "Éteint" : (suspended ? "Veille" : "Allumé");
 
   // First loop: publish current state so HA shows on/off instead of "unknown"
   // (change-detection alone never fires for a state that hasn't transitioned).

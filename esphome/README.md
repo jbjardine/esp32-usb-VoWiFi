@@ -160,15 +160,16 @@ text_sensor:
     entity_category: diagnostic
 ```
 
-| Value | Meaning |
-|---|---|
-| `Awake` | host powered and not asleep — usable now |
-| `Asleep or off` | USB bus suspended |
-| `Disconnected` | no USB host (unplugged / no standby power) |
+| Value | `mounted` | `suspended` | Meaning |
+|---|---|---|---|
+| `Allumé` | yes | no | PC on, USB bus active |
+| `Veille` | yes | yes | PC asleep (S3) — bus suspended, still enumerated |
+| `Éteint` | no | — | PC off (S5 de-enumerates) **or** cable unplugged |
 
-⚠️ USB alone **cannot distinguish sleep (S3) from full shutdown (S5)** — both
-stop bus activity, hence the combined `Asleep or off`. Telling them apart would
-require an agent on the PC, not this device.
+Observed reality: a PC in **S3 sleep** stays enumerated with the bus suspended
+(`Veille`), whereas a **full shutdown (S5)** powers down the USB host
+controller so the device de-enumerates (`Éteint`). The `Éteint` state can't
+distinguish "PC off" from "cable physically unplugged" — both de-enumerate.
 
 If you prefer separate on/off entities, three `binary_sensor` types are also
 available (all passive):

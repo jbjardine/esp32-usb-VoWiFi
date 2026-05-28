@@ -101,9 +101,9 @@ button:
     icon: mdi:power-settings
     disabled_by_default: true
 
-# Single diagnostic status entity — "Awake" / "Asleep or off" / "Disconnected".
-# This is the recommended one-entity status. (USB cannot tell sleep from full
-# shutdown, hence the combined "Asleep or off" state.)
+# Single diagnostic status entity — "Allumé" / "Veille" / "Éteint".
+# Allumé = PC on, Veille = S3 sleep (bus suspended), Éteint = S5 off
+# (de-enumerated) or cable unplugged.
 text_sensor:
   - platform: usb_hid_wakeup
     name: "PC status"
