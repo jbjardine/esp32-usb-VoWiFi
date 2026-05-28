@@ -46,21 +46,48 @@ external_components:
     components: [usb_hid_wakeup]
     refresh: 0s
 
-# VID/PID/strings are hardcoded at MVP to match the native firmware
-# (Espressif VID, product "Wakeup Keyboard Device"). Exposing them as YAML
-# options is on the roadmap — see esphome/README.md.
 usb_hid_wakeup:
   id: kbd
+  # Optional — defaults shown. keyboard_layout matters for force_shutdown typing.
+  vid: 0x303A
+  pid: 0x4004
+  manufacturer: "ESP"
+  product: "Wakeup Keyboard Device"
+  serial: "123456"
+  keyboard_layout: azerty   # azerty | us  (target host's Windows layout)
 
 button:
   - platform: usb_hid_wakeup
+    type: wakeup
     name: "Wakeup PC"
     usb_hid_wakeup_id: kbd
     icon: mdi:power
 
+  # SAFE diagnostic: open Notepad on the host, focus it, press this — it types
+  # "shutdown /s /f /t 0" with NO execution. Verify the text is exact (w / 0)
+  # before trusting the force_shutdown button below. Remove once validated.
+  - platform: usb_hid_wakeup
+    type: type_test
+    name: "Type test (Notepad)"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:keyboard
+
+  # DANGEROUS: forces a Windows shutdown (closes apps without saving).
+  # Recommend a confirmation dialog on the HA card (tap_action: confirmation).
+  - platform: usb_hid_wakeup
+    type: force_shutdown
+    name: "Force shutdown PC"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power-plug-off
+
 binary_sensor:
   - platform: usb_hid_wakeup
-    name: "USB connected to host"
     type: mounted
+    name: "USB connected to host"
     usb_hid_wakeup_id: kbd
     device_class: connectivity
+
+  - platform: usb_hid_wakeup
+    type: suspended
+    name: "PC asleep"
+    usb_hid_wakeup_id: kbd

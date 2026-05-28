@@ -97,6 +97,55 @@ Descriptors, the string table and the three `tud_hid_*` callbacks are
 identical to the native firmware (`main/usb.c:16-64`), including the
 `TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP` bit that authorizes remote wakeup.
 
+## Force-shutdown a Windows PC (v0.2)
+
+`button:` with `type: force_shutdown` forces the **Windows** host to power off,
+even with apps/sessions open. There is no SysRq-style un-blockable kernel
+sequence on Windows, so this combines two legs in one press:
+
+1. **Unlocked session (true force)**: `Win+R` → types `shutdown /s /f /t 0` →
+   `Enter`. The `/f` flag force-closes apps without "save your work" prompts.
+2. **Locked session (graceful fallback)**: an ACPI **System Power Down** HID
+   usage (works at the lock screen, but apps can delay/block it).
+
+### Keyboard layout matters
+
+HID keycodes are positional. To type the command correctly on a **French
+AZERTY** Windows host you MUST set `keyboard_layout: azerty` (default). `us` is
+also supported. Other layouts: type the command via the `type_test` button into
+Notepad and check — if wrong, open an issue.
+
+### Validate safely before trusting it
+
+Add a `type: type_test` button. Open **Notepad** on the host, focus it, press
+the button: it types `shutdown /s /f /t 0` with **no Win+R, no Enter, no power
+down**. Confirm the text is exactly right (watch `w`, `/`, `0`) before ever
+pressing `force_shutdown`.
+
+### Windows prerequisites
+
+- For the **locked** leg: Control Panel → Power Options → "Choose what the power
+  button does" → set to **Shut down** (otherwise System Power Down sleeps).
+- Recommended: enable a **confirmation dialog** on the HA button card
+  (`tap_action`) to avoid an accidental shutdown click.
+- The signed-in user needs shutdown privilege (default on desktop installs).
+
+> Linux/macOS are not targeted by `force_shutdown` (the typed command and the
+> ACPI semantics are Windows-specific). The `wakeup` button is OS-agnostic.
+
+## Configurable USB identity (v0.2)
+
+`vid`, `pid`, `manufacturer`, `product`, `serial` are optional on the
+`usb_hid_wakeup:` block (defaults match the native firmware: Espressif VID
+`0x303A`, PID `0x4004`). Useful to disambiguate multiple devices or to satisfy a
+BIOS that filters wake-capable devices by VID:PID.
+
+## `suspended` binary sensor (v0.2)
+
+`binary_sensor:` with `type: suspended` reports whether the USB bus is suspended
+— i.e. **the host is asleep** — via `tud_suspend_cb`/`tud_resume_cb`. It is
+purely passive and never wakes the PC. Pairs well with `type: mounted`.
+
 ## Hardware requirement
 
 **ESP32-S3 only.** USB OTG native peripheral is required to act as a USB
@@ -120,8 +169,10 @@ Arduino framework at config time.
 
 ## Roadmap
 
-- [ ] Hardware E2E validation on a real S3 (enumerate + wake a sleeping PC)
-- [ ] Expose VID/PID/manufacturer/product/serial as YAML options
-- [ ] `type: suspended` binary sensor (wire `tud_suspend_cb`/`tud_resume_cb`)
-- [ ] Optional keystroke action (send actual key, not just remote wakeup)
+- [x] Hardware E2E validation on a real S3 (enumerate + wake a sleeping PC)
+- [x] Expose VID/PID/manufacturer/product/serial as YAML options (v0.2)
+- [x] `type: suspended` binary sensor (v0.2)
+- [x] Windows force-shutdown via `type: force_shutdown` (v0.2)
+- [ ] Hardware E2E validation of force_shutdown + AZERTY mapping
+- [ ] Additional keyboard layouts beyond AZERTY/US
 - [ ] Upstream PR to esphome/esphome once stable
