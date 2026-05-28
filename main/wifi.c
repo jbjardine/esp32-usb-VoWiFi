@@ -10,6 +10,7 @@
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <esp_mac.h>
+#include <mdns.h>
 
 static const char *TAG = "wifi";
 
@@ -113,12 +114,21 @@ static esp_err_t wifi_connect_sta(int max_attempts) {
 	ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
 	/* Apply the configured hostname before starting wifi so it lands in
-	 * the initial DHCP DISCOVER (some routers tag clients off this only). */
+	 * the initial DHCP DISCOVER (some routers tag clients off this only).
+	 * Also publish it via mDNS so '<hostname>.local' resolves on every OS. */
 	char hostname[NVS_CONFIG_HOSTNAME_MAX] = { 0 };
-	if (nvs_config_get_hostname(hostname, sizeof(hostname)) == ESP_OK && hostname[0])
+	if (nvs_config_get_hostname(hostname, sizeof(hostname)) == ESP_OK && hostname[0]) {
 		esp_netif_set_hostname(wifi_sta_netif, hostname);
+		if (mdns_init() == ESP_OK) {
+			mdns_hostname_set(hostname);
+			mdns_instance_name_set("ESP Wakeup Keypress");
+			mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+		}
+	}
 
 	ESP_ERROR_CHECK(esp_wifi_start());
+	/* WIFI_PS_NONE: device is USB-powered, latency > energy for HTTP/MQTT. */
+	esp_wifi_set_ps(WIFI_PS_NONE);
 
 	for (int attempt = 1; attempt <= max_attempts; attempt++) {
 		ESP_LOGI(TAG, "STA connect attempt %d/%d to '%s'", attempt, max_attempts, wifi_config.sta.ssid);
