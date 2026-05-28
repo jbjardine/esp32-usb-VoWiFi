@@ -26,6 +26,7 @@ enum ButtonAction : uint8_t {
   ACTION_TYPE_TEST = 2,       // type the command, no Enter (diagnostic)
   ACTION_ACPI_SHUTDOWN = 3,   // ACPI System Power Down only (locked-safe)
   ACTION_AUTO_SHUTDOWN = 4,   // force macro + ACPI fallback (covers both)
+  ACTION_SLEEP = 5,           // ACPI System Sleep (put the PC to sleep)
 };
 
 class UsbHidWakeupComponent : public Component {
@@ -40,6 +41,7 @@ class UsbHidWakeupComponent : public Component {
   void request_force_shutdown();  // type /f command only (unlocked session)
   void request_acpi_shutdown();   // ACPI System Power Down only (locked-safe)
   void request_auto_shutdown();   // force macro + ACPI fallback
+  void request_sleep();           // ACPI System Sleep (put PC to sleep)
   void request_type_test();       // type the command into the focused window, no execution
 
   // Sensor registration
@@ -131,6 +133,9 @@ class UsbHidWakeupButton : public button::Button, public Parented<UsbHidWakeupCo
         break;
       case ACTION_AUTO_SHUTDOWN:
         this->parent_->request_auto_shutdown();
+        break;
+      case ACTION_SLEEP:
+        this->parent_->request_sleep();
         break;
       case ACTION_TYPE_TEST:
         this->parent_->request_type_test();

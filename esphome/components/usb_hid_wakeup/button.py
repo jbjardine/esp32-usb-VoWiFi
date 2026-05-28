@@ -5,6 +5,7 @@ Button types:
   - force_shutdown:   types "shutdown /s /f /t 0" only — true force, UNLOCKED session
   - acpi_shutdown:    ACPI System Power Down only (no typing) — works LOCKED, graceful
   - auto_shutdown:    force macro + ACPI fallback (covers both lock states)
+  - sleep:            ACPI System Sleep — puts the PC to sleep (S3)
   - type_test:        SAFE — types the shutdown command into the focused window
                       (no Win+R, no Enter, no power down) to validate keyboard_layout
 """
@@ -25,6 +26,7 @@ TYPES = {
     "force_shutdown": ButtonAction.ACTION_FORCE_SHUTDOWN,
     "acpi_shutdown": ButtonAction.ACTION_ACPI_SHUTDOWN,
     "auto_shutdown": ButtonAction.ACTION_AUTO_SHUTDOWN,
+    "sleep": ButtonAction.ACTION_SLEEP,
     "type_test": ButtonAction.ACTION_TYPE_TEST,
 }
 

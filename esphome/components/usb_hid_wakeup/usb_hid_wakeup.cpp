@@ -280,11 +280,13 @@ void UsbHidWakeupComponent::loop() {
   bool mounted = tud_mounted();
   bool suspended = s_suspended;
   bool awake = mounted && !suspended;  // host powered AND not asleep == usable now
-  // 3-state diagnostic string matching observed reality on the host:
-  //   enumerated + active  -> "Allumé"  (PC on)
-  //   enumerated + suspended -> "Veille" (PC in S3 sleep, bus suspended)
-  //   not enumerated        -> "Éteint" (PC off in S5 de-enumerates; also cable unplugged)
-  const char *status = !mounted ? "Éteint" : (suspended ? "Veille" : "Allumé");
+  // 3-state diagnostic string. On boards that keep USB powered in S5 for
+  // power-on-by-keyboard, sleep (S3) and off (S5) are electrically identical to
+  // the device (both mounted + suspended) — hence the merged "Veille ou éteint".
+  //   enumerated + active    -> "Allumé"          (PC on)
+  //   enumerated + suspended -> "Veille ou éteint" (S3 sleep OR S5 off w/ standby)
+  //   not enumerated         -> "Débranché"        (cable out / no standby power)
+  const char *status = !mounted ? "Débranché" : (suspended ? "Veille ou éteint" : "Allumé");
 
   // First loop: publish current state so HA shows on/off instead of "unknown"
   // (change-detection alone never fires for a state that hasn't transitioned).
@@ -393,6 +395,14 @@ void UsbHidWakeupComponent::request_acpi_shutdown() {
     return;
   ESP_LOGW(TAG, "ACPI System Power Down (locked-safe, graceful)");
   this->enqueue_acpi_powerdown_(0);
+}
+
+void UsbHidWakeupComponent::request_sleep() {
+  if (!this->ready_for_sequence_("sleep"))
+    return;
+  ESP_LOGW(TAG, "System Sleep (ACPI)");
+  this->enqueue_sysctrl_(0, 2);   // 2 = System Sleep
+  this->enqueue_sysctrl_(60, 0);  // release
 }
 
 void UsbHidWakeupComponent::request_auto_shutdown() {

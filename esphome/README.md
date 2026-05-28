@@ -109,6 +109,10 @@ they are exposed as **three explicit button types** — pick per situation:
 | `acpi_shutdown` | ACPI **System Power Down** HID usage only, no typing | session **locked** (graceful) |
 | `auto_shutdown` | force macro then ACPI fallback, one press | covers both, but stateful |
 
+There is also a `sleep` button type: ACPI **System Sleep** (puts the PC into
+S3 sleep). It's the counterpart of `wakeup` and works on any OS that sleeps on
+the System Sleep HID usage (default on Windows).
+
 ⚠️ `force_shutdown` on a **locked** screen does nothing useful — `Win+R` is
 blocked and the typed characters land in the password field (one failed login
 attempt). Use `acpi_shutdown` when locked. `acpi_shutdown` is **graceful**
@@ -163,13 +167,15 @@ text_sensor:
 | Value | `mounted` | `suspended` | Meaning |
 |---|---|---|---|
 | `Allumé` | yes | no | PC on, USB bus active |
-| `Veille` | yes | yes | PC asleep (S3) — bus suspended, still enumerated |
-| `Éteint` | no | — | PC off (S5 de-enumerates) **or** cable unplugged |
+| `Veille ou éteint` | yes | yes | bus suspended — **S3 sleep OR S5 off** (see below) |
+| `Débranché` | no | — | de-enumerated — cable unplugged / no standby power |
 
-Observed reality: a PC in **S3 sleep** stays enumerated with the bus suspended
-(`Veille`), whereas a **full shutdown (S5)** powers down the USB host
-controller so the device de-enumerates (`Éteint`). The `Éteint` state can't
-distinguish "PC off" from "cable physically unplugged" — both de-enumerate.
+⚠️ **Sleep (S3) and off (S5) are often indistinguishable to the device.** On a
+board that keeps USB powered in S5 for "power-on-by-keyboard", a fully-off PC
+stays enumerated with the bus suspended — exactly like sleep — so both read as
+`Veille ou éteint`. Only a board that *cuts* USB power in S5 would show
+`Débranché` when off. There is no reliable USB-only way to tell them apart;
+distinguishing them would need an agent on the PC.
 
 If you prefer separate on/off entities, three `binary_sensor` types are also
 available (all passive):
@@ -241,13 +247,50 @@ device. ESP32-C3/C6/H2 have only a fixed USB-Serial-JTAG and cannot enumerate
 as an arbitrary HID device. The Python schema rejects non-S3 variants and the
 Arduino framework at config time.
 
+## Waking the PC: S3 vs S5, and the post-OTA gotcha
+
+The `wakeup` button calls `tud_remote_wakeup()`, which emits USB *resume*
+signalling. How the PC reacts depends on its sleep state — and on the host
+having **armed/registered** this device for wake:
+
+- **From sleep (S3)** — bus is suspended but the device stays enumerated. The
+  OS resumes on the signal **if** it armed remote-wakeup for the device. Windows
+  arms it when the device is enumerated as wake-capable and the PC then sleeps.
+  Make it explicit: Device Manager → the keyboard device → Power Management →
+  **"Allow this device to wake the computer"**.
+- **From full off (S5)** — waking needs a BIOS feature (**"Power On By
+  Keyboard/USB" / "Wake on USB S4-S5"**). Test with a real keyboard: if a
+  keypress powers the PC on, the feature is enabled and the ESP can do it too
+  (the same `tud_remote_wakeup()` resume signalling is detected by the chipset's
+  wake logic). On such boards USB stays powered in S5 and the device stays
+  enumerated+suspended, so the status shows `Veille ou éteint` (not
+  `Débranché`) — sleep and off look identical. Boards that disable USB standby
+  power in S5 (ErP/EuP) can't wake from USB at all and show `Débranché` when off.
+
+### ⚠️ After every OTA flash: do one full PC power cycle
+
+An OTA flash soft-reboots the ESP, which **re-enumerates** the USB device. But
+the wake registration is snapshotted by the host at a *full* cycle, not on a
+soft re-enumeration:
+
+- **S3 / Windows**: the OS may keep the old (now-dead) device handle and not
+  re-arm wake until a fresh enumeration — physically re-plug the OTG cable, or
+  do one sleep/wake cycle.
+- **S5 / BIOS**: the firmware's "power-on-by-keyboard" allow-list is captured at
+  **boot/shutdown**, not at runtime. After an OTA flash the ESP isn't on that
+  list until the next full cycle.
+
+**Fix for both:** after flashing, do **one full PC boot → shutdown** (and/or
+re-plug the OTG cable). The host re-registers the ESP keyboard, and wake from
+both S3 and S5 works again. This is expected, not a bug.
+
 ## Troubleshooting
 
-- **Button does nothing / PC doesn't wake**: the PC must have "Wake from USB"
-  / "USB Power S5" enabled in BIOS, and the OS must allow wakeup on the device.
-  On Linux, `echo enabled > /sys/.../power/wakeup` for the device (see the
-  `master` README's systemd snippet). Check `esphome logs` — "remote wakeup not
-  sent" means the host wasn't suspended (so nothing to wake).
+- **Button does nothing / PC doesn't wake**: see the section above — most often
+  the host hasn't (re-)armed wake after an OTA flash; do one full PC power
+  cycle. Also confirm BIOS "Wake/Power-On from USB" and the OS "allow this
+  device to wake" setting. Check `esphome logs` — "remote wakeup not sent"
+  means the host wasn't suspended/armed.
 - **No serial logs after boot**: HID claims the USB OTG port. Use
   `logger: hardware_uart: USB_SERIAL_JTAG` (a separate peripheral on S3) or an
   external UART. Do NOT use `hardware_uart: USB_CDC` — it conflicts with HID.

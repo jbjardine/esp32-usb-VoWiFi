@@ -71,6 +71,18 @@ button:
       - delay: 400ms
       - script.execute: led_show_state
 
+  # sleep: ACPI System Sleep — puts the PC into sleep (S3). Needs the OS sleep
+  #   action enabled (it is by default on Windows). Cyan flash for feedback.
+  - platform: usb_hid_wakeup
+    type: sleep
+    name: "Sleep PC"
+    usb_hid_wakeup_id: kbd
+    icon: mdi:power-sleep
+    on_press:
+      - light.turn_on: { id: status_led, red: 0%, green: 100%, blue: 100%, brightness: 60%, effect: "None" }
+      - delay: 500ms
+      - script.execute: led_show_state
+
   # SAFE diagnostic: open Notepad on the host, focus it, enable+press this — it
   # types "shutdown /s /f /t 0" with NO execution, to validate keyboard_layout.
   # Hidden by default in HA (disabled_by_default) and filed under Diagnostic;
@@ -121,9 +133,10 @@ button:
       - delay: 600ms
       - script.execute: led_show_state
 
-# Single diagnostic status entity — "Allumé" / "Veille" / "Éteint".
-# Allumé = PC on, Veille = S3 sleep (bus suspended), Éteint = S5 off
-# (de-enumerated) or cable unplugged.
+# Single diagnostic status entity — "Allumé" / "Veille ou éteint" / "Débranché".
+# Allumé = PC on. "Veille ou éteint" = bus suspended (S3 sleep AND S5-off look
+# identical when the board keeps USB powered in S5 for power-on-by-keyboard).
+# "Débranché" = de-enumerated (cable out / no standby power).
 text_sensor:
   - platform: usb_hid_wakeup
     name: "PC status"
@@ -136,7 +149,7 @@ text_sensor:
 
 # ── Onboard RGB status LED (feu tricolore) ──────────────────────────────────
 # Optional. Drives the S3's onboard WS2812 to show PC state at a glance:
-#   Allumé → green   Veille → amber   Éteint → red (all dim)
+#   Allumé → green   Veille ou éteint → amber   Débranché → red (all dim)
 #   wakeup → white flash   shutdown → purple flash   WiFi lost → blinking blue
 # 100% YAML — the component just publishes state; this is presentation.
 # Do NOT also declare `status_led:` on the same pin.
@@ -178,9 +191,9 @@ script:
                 call.set_effect("None");
                 call.set_brightness(0.15f);
                 const std::string &s = id(pc_status).state;
-                if (s == "Allumé")      call.set_rgb(0.0f, 1.0f, 0.0f);   // green
-                else if (s == "Veille") call.set_rgb(1.0f, 0.5f, 0.0f);   // amber
-                else                    call.set_rgb(1.0f, 0.0f, 0.0f);   // Éteint = red
+                if (s == "Allumé")                call.set_rgb(0.0f, 1.0f, 0.0f);  // green
+                else if (s == "Veille ou éteint") call.set_rgb(1.0f, 0.5f, 0.0f);  // amber
+                else                              call.set_rgb(1.0f, 0.0f, 0.0f);  // Débranché = red
                 call.perform();
 
 # Optional raw binary signals — uncomment if you prefer separate on/off entities
