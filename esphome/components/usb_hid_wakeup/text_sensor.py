@@ -9,13 +9,12 @@ Pair with `entity_category: diagnostic` to file it under the device's
 Diagnostic section in Home Assistant.
 """
 from esphome import codegen as cg
+from esphome import config_validation as cv
 from esphome.components import text_sensor
 
 from . import UsbHidWakeupComponent, usb_hid_wakeup_ns
 
 DEPENDENCIES = ["usb_hid_wakeup"]
-
-import esphome.config_validation as cv
 
 CONF_USB_HID_WAKEUP_ID = "usb_hid_wakeup_id"
 

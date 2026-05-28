@@ -17,6 +17,8 @@
 #include <tinyusb_default_config.h>
 #include <class/hid/hid_device.h>
 
+#include <atomic>
+
 namespace esphome {
 namespace usb_hid_wakeup {
 
@@ -48,7 +50,9 @@ static const uint8_t hid_configuration_descriptor[] = {
 
 // ----- TinyUSB C-linkage callbacks ------------------------------------------
 
-static volatile bool s_suspended = false;
+// Written from the TinyUSB task (core 1) and read from loop() (core 0):
+// std::atomic gives the cross-core visibility `volatile` does not guarantee.
+static std::atomic<bool> s_suspended{false};
 
 extern "C" {
 
@@ -141,9 +145,13 @@ bool UsbHidWakeupComponent::char_to_keycode_(char c, uint8_t &keycode, bool &shi
 // ----- Event queue (typing engine) ------------------------------------------
 
 void UsbHidWakeupComponent::begin_sequence_() {
+  // Starting a new sequence drops any in-flight one (double-tap / HA retry).
+  // Enqueue a leading release-all so a key/modifier left held by the discarded
+  // sequence (e.g. Win+R whose release was dropped) is cleared before we type.
   this->events_.clear();
   this->event_cursor_ = 0;
   this->seq_base_ = millis();
+  this->enqueue_key_(0, 0, 0);  // release-all guard
 }
 
 void UsbHidWakeupComponent::enqueue_key_(uint32_t offset_ms, uint8_t modifier, uint8_t keycode) {
@@ -402,6 +410,8 @@ void UsbHidWakeupComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Remote wakeup:    enabled (bmAttributes bit 5)");
   ESP_LOGCONFIG(TAG, "  Mounted sensors:  %u", (unsigned) this->mounted_sensors_.size());
   ESP_LOGCONFIG(TAG, "  Suspended sensors:%u", (unsigned) this->suspended_sensors_.size());
+  ESP_LOGCONFIG(TAG, "  Awake sensors:    %u", (unsigned) this->awake_sensors_.size());
+  ESP_LOGCONFIG(TAG, "  Status text:      %u", (unsigned) this->status_text_sensors_.size());
   if (this->is_failed())
     ESP_LOGE(TAG, "  Component FAILED to install TinyUSB driver");
 }
